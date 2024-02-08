@@ -10,6 +10,12 @@ library(leaflet)
 library(readr)
 library(jsonlite)
 library(stringi)
+library(readxl)
+library(ggplot2)
+library(ggiraph)
+library(sf)
+library(leaflet.extras)
+library(shiny)
 
 # Function to load data from the REST API
 load_data <- function(url) {
@@ -34,9 +40,11 @@ if (!is.null(data)) {
 head(df)
 summary(df)
 
-# first approach is to clean the data but just 
-# cleaning the column names and converting the data types
-# and converting the data to a tibble for easier manipulation
+
+
+# The first approach is to clean the data, specifically cleaning the column names and converting the data types.
+# We also convert the data to a tibble for easier manipulation.
+
 # Function to clean data
 clean_data <- function(df) {
   # Clean column names
@@ -52,9 +60,9 @@ clean_data <- function(df) {
 
 cleaned_data <- clean_data(df)
 
-# let's analyze margen, remisión, tipo venta, % bio etanol, % ester metilico
+# Let's analyze certain columns: margen, remision, tipo venta, % bio etanol, % ester metilico
 
-# create a function to get prop tables
+# Functoin to calculate proportion tables
 get_prop_table <- function(data, column) {
   prop_table <- table(data[[column]]) / nrow(data) * 100
   return(prop_table)
@@ -66,19 +74,15 @@ get_prop_table(cleaned_data, "tipo_venta")
 get_prop_table(cleaned_data, "percent_bio_etanol")
 get_prop_table(cleaned_data, "percent_ester_metilico")
 
-# we cannot infer the meaning of margen, remision
-# also tipo_venta it's not clear, thus we'll remove these columns
-# for percent of bio_etanol and ester_metilico we can see
-# that more than 99% of values are 0, so we'll remove these columns as well
+# We cannot infer the meaning of margen and remision. Also, tipo_venta is unclear, so we'll remove these columns.
+# For percent of bio_etanol and ester_metilico, we observe that more than 99% of values are 0, so we'll remove these columns as well.
+# After research, we discovered that 'IDMunicipio' and 'IDProvincia' represent municipality and province IDs respectively, which are not relevant for analysis.
+# These columns are redundant as we already have city and province names. However, we'll retain 'IDCCAA' to add a column with the region name later.
 
-# upon research 
-# we can remove IDEESS as we know is the gas station id and it's not relevant for the analysis
-# same for IDMunicipio and IDPorovincia as we have the name of the city and province
-# we'll keep IDCCAA so later we could add a column with the name of the region
-#
+# Let's add a column with the name of the region.
+# We'll use IDCCAA to retrieve the region name from an Excel file provided by the INE.
+ccaa <- read_excel("codccaa_OFFCIAL.xls", skip=1)
 
-# let's add a column with the name of the region
-# we'll use the IDCCAA to get the name of the region and an excel provided my the INE
 cleaned_data <- cleaned_data %>% 
   left_join(ccaa, by = c("idccaa" = "CODIGO")) %>% 
   rename("comunidad_autonoma" = LITERAL) %>% 
@@ -90,10 +94,9 @@ cleaned_data <- cleaned_data %>%
     )
   )
 
-#columns to remove:
-columns_to_remove_1 <- c("margen", "remision", "tipo_venta", "percent_bio_etanol", "percent_ester_metilico", "id_municipio", "id_provincia", "ideess", "idccaa")
 
-# analyzing the prices of different fuel types
+
+# Analyzing the prices of different fuel types
 
 # Select the specified columns for analysis
 selected_columns <- c("precio_biodiesel", "precio_bioetanol", "precio_gas_natural_comprimido", 
@@ -103,35 +106,21 @@ selected_columns <- c("precio_biodiesel", "precio_bioetanol", "precio_gas_natura
                       "precio_gasolina_95_e5_premium", "precio_gasolina_98_e10", 
                       "precio_gasolina_98_e5", "precio_hidrogeno")
 
-# Function to calculate mean for numeric columns
-calculate_mean <- function(data) {
-  colMeans(data, na.rm = TRUE)
-}
+# mean of selected_columns from the df
+mean_values <- colMeans(cleaned_data[selected_columns], na.rm = TRUE)
 
-# Function to count NaN values for numeric columns
-count_nan <- function(data) {
-  colSums(sapply(data, is.nan))
-}
+# let's check the NaN and null values for the selected columns
+nan_values <- colSums(sapply(cleaned_data[selected_columns], is.nan))
 
 # Function to count null values for numeric columns
-count_null <- function(data) {
-  colSums(sapply(data, is.na))
-}
+null_values <- colSums(sapply(cleaned_data[selected_columns], is.na))
 
-calculate_null_percentage <- function(null_values, data) {
-  round((null_values/nrow(data)), 4)
-}
-
-# Calculate mean, count NaN values, and count null values for numeric columns
-mean_values <- calculate_mean(selected_data)
-nan_values <- count_nan(selected_data)
-null_values <- count_null(selected_data)
-null_percentage <- calculate_null_percentage(null_values, selected_data)
+null_percentage <- round((null_values/nrow(cleaned_data)), 4)
 
 
 # Combine results into a single data frame
 data_quality <- data.frame(
-  column_names = names(selected_data),
+  column_names = selected_columns,
   mean = mean_values,
   nan_values = nan_values,
   null_values = null_values,
@@ -142,7 +131,7 @@ data_quality <- data.frame(
 data_quality %>% View()
 
 # Check if any selected columns have a high proportion of NaN or null values
-columns_to_remove_2 <- data_quality$column_names[
+columns_to_remove <- data_quality$column_names[
   data_quality$null_percentage > 0.75
 ]
 
@@ -159,7 +148,9 @@ if (length(columns_to_remove) > 0) {
 columns_to_remove <- c(columns_to_remove_1, columns_to_remove_2)
 # Seleccionar columnas en el orden especificado
 cleaned_data <- cleaned_data %>%
-  select(c_p, direccion, latitud, longitud_wgs84, localidad, municipio, provincia, comunidad_autonoma, 
+  select(-all_of(columns_to_remove))
+cleaned_data <- cleaned_data %>%
+  select(ideess, c_p, direccion, latitud, longitud_wgs84, localidad, municipio, provincia, comunidad_autonoma, 
          rotulo, precio_gasoleo_a, precio_gasoleo_premium, precio_gasolina_95_e5, precio_gasolina_98_e5)
 cleaned_data %>% View()
 
@@ -168,8 +159,8 @@ cleaned_data %>% View()
 average_prices <- cleaned_data %>%
   group_by(comunidad_autonoma) %>%
   summarise(
-    avg_precio_gasoleo_a = mean(precio_gasoleo_a, na.rm = TRUE),
-    avg_precio_gasolina_95_e5 = mean(precio_gasolina_95_e5, na.rm = TRUE)
+    avg_precio_gasoleo_a = round(mean(precio_gasoleo_a, na.rm = TRUE),4),
+    avg_precio_gasolina_95_e5 = round(mean(precio_gasolina_95_e5, na.rm = TRUE),4) 
   )
 
 # Create a bar graph of the average price of gasoil a and gasolina 95 e5 by comunidad_autonoma
@@ -190,6 +181,22 @@ average_prices %>%
   guides(fill = guide_legend(title = "Fuel Type")) +
   coord_flip()
 
+mapa_calor <- leaflet() %>%
+  setView(lng = -4.0, lat = 40.0, zoom = 6) %>%  # Centrar el mapa en España
+  addProviderTiles("CartoDB.Positron") %>%  # Añadir capa base
+  addHeatmap(data = cleaned_data, lng = ~longitud_wgs84, lat = ~latitud, intensity = ~precio_gasoleo_a, blur = 20, radius = 15)
+print(mapa_calor)
+
+
+# cambiar el valor de la latitud y una longitud de un rotulo
+cleaned_data$latitud[cleaned_data$ideess == 11988] <- 41.32255489106866
+cleaned_data$longitud_wgs84[cleaned_data$ideess == 11988] <- 2.1341602391592818
+
+cleaned_data$latitud[cleaned_data$ideess == 13745] <- 38.03643632969041
+cleaned_data$longitud_wgs84[cleaned_data$ideess == 13745] <- -4.038429171140354
+
+cleaned_data$latitud[cleaned_data$ideess == 12883] <- 40.17238230211872
+cleaned_data$longitud_wgs84[cleaned_data$ideess == 12883] <- -3.6656475095835437
 
 # Function to filter data by city
 filter_by_city <- function(data, city) {
@@ -201,6 +208,8 @@ filter_by_city <- function(data, city) {
   
   return(filtered_data)
 }
+
+
 
 # Prompt user to enter a city name
 city_name <- readline(prompt = "Enter the name of a city to view gas stations: ")
@@ -218,7 +227,15 @@ if (nrow(city_data) > 0){
                popup = ~paste("<strong>", rotulo, "</strong><br>", 
                               "Dirección:", direccion, "<br>", 
                               "Precio gasóleo A:", precio_gasoleo_a, "€<br>", 
-                              "Precio gasolina E95:", precio_gasolina_95_e5, "€"))
+                              "Precio gasolina E95:", precio_gasolina_95_e5, "€")) %>% 
+    addHeatmap(
+      lat = ~latitud,
+      lng = ~longitud_wgs84,
+      intensity = ~precio_gasoleo_a+precio_gasolina_95_e5,
+      blur = 20,
+      radius = 15,
+      max = 0.7
+    )
   print(map)
   
 } else {
