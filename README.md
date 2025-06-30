@@ -4,7 +4,7 @@
 
 ![R](https://img.shields.io/badge/R-4.0+-276DC3.svg)
 ![Data Source](https://img.shields.io/badge/Data-Spanish_Government_API-red.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+![License](https://img.shields.io/badge/License-Custom-red.svg)
 
 ## 🎯 What it does
 
