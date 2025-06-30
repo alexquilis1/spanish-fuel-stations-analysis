@@ -126,8 +126,9 @@ Contributions are welcome! Here are some ideas:
 - [ ] Add English translations
 
 ## 📄 License
+This project is licensed under a Custom License - see the [LICENSE](LICENSE) file for details.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**Note:** Commercial use requires notification and may require permission. Contact for commercial licensing inquiries.
 
 ## 🙏 Acknowledgments
 
